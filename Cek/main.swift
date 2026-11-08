@@ -15,7 +15,7 @@ assert(Rumus.cekSpesifikasi(UkuranBox(panjang: 45, lebar: 37, tinggi: 40), a: a)
 // Air dan jarak: box nominal 48 × 33 dalam → 792 → 800 ml; dua box 34 cm → 66 cm
 let dlm = Rumus.dalam(UkuranBox(panjang: 52, lebar: 37, tinggi: 34), a: a)
 assert(dlm.p == 48 && dlm.l == 33 && Rumus.airML(p: dlm.p, l: dlm.l, a: a) == 800)
-assert(Rumus.jarakTaruh(tinggiTumpukanCM: 68, a: a) == 66 && a.jarakKameraKeDasarCM.berisi(66))
+assert(Rumus.jarakTaruh(tinggiTumpukanCM: 68, a: a) == 66 && a.jarakKameraKeDasarCM.berisi(44))
 assert(abs(Rumus.jarakPegang(kameraY: 0.75, lantaiY: 0.1, a: a) - 63) < 1e-9)
 
 // Ukur ARKit: garis bidik dari 1 m di atas lantai, miring 45°, dipotong bidang tutup setinggi 46 cm
@@ -52,8 +52,15 @@ assert(abs(Rumus.jarakKoreksiTepi(sudutKartu, fx: 3000, fy: 3000, a: a)! - 60) <
 let sudutDasar = [(-1120.0, -770.0), (1120, -770), (1120, 770), (-1120, 770)].map { CGPoint(x: 1920 + $0.0, y: 1080 + $0.1) }
 let dsr = Rumus.dasarDariSudut(sudutDasar, fx: 2800, fy: 2800, jarakCM: 60)!
 assert(abs(dsr.p - 48) < 1e-9 && abs(dsr.l - 33) < 1e-9)
-assert(Rumus.catatanWadah(jarakCM: 61, p: 48, l: 33, a: a).isEmpty)
-assert(Rumus.catatanWadah(jarakCM: 70, p: 46, l: 40, a: a) == ["Jarak kamera ke dasar 70,0 cm, harus 55–68 cm.", "Lebar dasar 40,0 cm, harus 32–34 cm."])
+let dasarAman = [CGPoint(x: 0.2, y: 0.1), CGPoint(x: 0.8, y: 0.1), CGPoint(x: 0.8, y: 0.9), CGPoint(x: 0.2, y: 0.9)]
+assert(Rumus.catatanWadah(jarakCM: 44, sudutDasar: dasarAman, a: a).isEmpty)
+assert(Rumus.catatanWadah(jarakCM: 30, sudutDasar: dasarAman, a: a) == ["Jarak kamera ke dasar 30,0 cm, harus 35–55 cm. Naikkan HP."])
+assert(Rumus.catatanWadah(jarakCM: 44, sudutDasar: dasarAman + [CGPoint(x: 0.99, y: 0.5)], a: a).count == 1)
+
+// Lensa 0.6x: FOV 90° dengan zoom 2 → tan 0,5 → 53,13°; skala deteksi mengikuti jarak, dibatasi resolusi asli
+assert(abs(Rumus.fovEfektif(90, zoom: 2) - 53.130102354) < 1e-6 && Rumus.fovEfektif(70, zoom: 1) == 70)
+assert(Rumus.sisiDeteksi(jarakCM: 44, asliPX: 4032, a: a) == 1920)
+assert(abs(Rumus.sisiDeteksi(jarakCM: 55, asliPX: 4032, a: a) - 2400) < 1e-9 && Rumus.sisiDeteksi(jarakCM: 200, asliPX: 4032, a: a) == 4032)
 assert(abs(Rumus.fxDariFOV(lebarPX: 2000, fovDerajat: 90) - 1000) < 1e-9)
 
 // Skala benur: 66 cm, FOV 67°, sisi panjang 1920 px → 0,455 mm/px → PL-10 ±19 px

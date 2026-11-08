@@ -97,6 +97,7 @@ struct AmbangVerifikasi: Codable {
     }
     struct Kam: Codable {
         var levelSenter: Float
+        var zoomLensa: Double            // 0.6x = ultrawide × 1,2, sama dengan video latih
         var maksISO: Float
         var maksDurasiEksposurDetik: Double
         var sisiAnalisisPX: Int
@@ -127,8 +128,9 @@ struct AmbangVerifikasi: Codable {
         var maksPersenTumpuk: Double
         var maksSelisihAntarFoto: Double
     }
-    // Pipeline deteksi: sisi panjang foto 1920 px, ubin 320 px, sama dengan pipeline latih
-    struct Det: Codable { var sisiPanjangPX: Int; var sisiUbinPX: Int; var overlapUbin: Double }
+    // Pipeline deteksi: sisi panjang foto 1920 px, ubin 320 px, sama dengan pipeline latih.
+    // jarakLatihCM: kamera ke dasar saat video latih direkam (0.6x, HP di atas box 46 cm)
+    struct Det: Codable { var sisiPanjangPX: Int; var sisiUbinPX: Int; var overlapUbin: Double; var jarakLatihCM: Double }
 
     var versi: String
     var boxPanjangLuarCM: Rentang
@@ -330,15 +332,31 @@ extension Rumus {
         return (max(s1, s2), min(s1, s2))
     }
 
-    /// Alasan wadah belum terverifikasi; kosong = sesuai rekomendasi. Dasar dalam = rentang luar − 2 · tebal dinding.
-    static func catatanWadah(jarakCM: Double, p: Double, l: Double, a: AmbangVerifikasi) -> [String] {
-        let t = 2 * a.tebalDindingCM
-        return [("Jarak kamera ke dasar", jarakCM, a.jarakKameraKeDasarCM, 0.0),
-                ("Panjang dasar", p, a.boxPanjangLuarCM, t), ("Lebar dasar", l, a.boxLebarLuarCM, t)]
-            .compactMap { nama, x, r, k in
-                let lo = r.min - k, hi = r.max - k
-                return x < lo || x > hi ? "\(nama) \(angka(x)) cm, harus \(angka(lo, 0))–\(angka(hi, 0)) cm." : nil
-            }
+    /// Alasan wadah belum terverifikasi; kosong = terverifikasi. Ukuran box tidak dibatasi; yang dicek fungsinya:
+    /// 1. jarak kamera dekat jarak video latih, supaya ukuran benur di foto sama dengan yang dikenal model;
+    /// 2. seluruh dasar terlihat: 4 sudut dasar (0–1 terhadap frame) tidak masuk pita tepi.
+    static func catatanWadah(jarakCM: Double, sudutDasar: [CGPoint], a: AmbangVerifikasi) -> [String] {
+        let r = a.jarakKameraKeDasarCM, t = a.hasil.pitaTepi
+        var c = [String]()
+        if !r.berisi(jarakCM) {
+            c.append("Jarak kamera ke dasar \(angka(jarakCM)) cm, harus \(angka(r.min, 0))–\(angka(r.max, 0)) cm" +
+                     (jarakCM < r.min ? ". Naikkan HP." : ". Turunkan HP."))
+        }
+        if sudutDasar.contains(where: { $0.x < t || $0.x > 1 - t || $0.y < t || $0.y > 1 - t }) {
+            c.append("Sudut dasar terlalu dekat ke tepi gambar. Taruh HP di tengah box, atau naikkan HP.")
+        }
+        return c
+    }
+
+    /// FOV setelah zoom digital: tan(FOV'/2) = tan(FOV/2) ÷ zoom.
+    static func fovEfektif(_ fovDerajat: Double, zoom: Double) -> Double {
+        2 * atan(tan(fovDerajat / 2 * .pi / 180) / max(zoom, 1)) * 180 / .pi
+    }
+
+    /// Sisi panjang foto untuk deteksi, supaya benur sama besar dengan di video latih: ukuran benur ∝ sisi ÷ jarak.
+    /// Contoh: HP 20% lebih tinggi dari saat latih → foto 20% lebih besar. Tidak melebihi resolusi asli foto.
+    static func sisiDeteksi(jarakCM: Double, asliPX: Double, a: AmbangVerifikasi) -> Double {
+        min(Double(a.deteksi.sisiPanjangPX) * jarakCM / a.deteksi.jarakLatihCM, asliPX)
     }
 
     static func kartuSah(_ k: HasilKartu, a: AmbangVerifikasi) -> Bool {

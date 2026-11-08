@@ -79,17 +79,20 @@ struct HasilSesi {
     var jumlah: Int?                    // median foto lolos; nil = ditolak
     var perFoto: [Int]
     var panjangPX: Double
+    var sisiDeteksiPX: Double           // sisi panjang foto saat deteksi, setelah disesuaikan dengan jarak
     var gambar: CGImage?                // foto untuk ditampilkan
     var kotak: [CGRect]                 // kotak deteksi (hijau) atau area bermasalah (merah), ternormalisasi
 }
 
 enum Proses {
-    /// K foto → skala tetap (sisi panjang foto = 1920 px, sama dengan frame latih) → deteksi berubin → cek per foto dan antarfoto.
+    /// K foto → skala supaya benur sama besar dengan di video latih (1920 px di jarak latih) → deteksi berubin → cek per foto dan antarfoto.
     static func hitung(_ t: Tangkapan, profil: WadahProfile, stadia: Stadia, model: VNCoreMLModel, a: AmbangVerifikasi) -> HasilSesi {
         var perFoto = [(hasil: HasilVerifikasi, deteksi: [Deteksi], tanda: [CGRect], gambar: CGImage)]()
-        var panjangPX = 0.0
+        var panjangPX = 0.0, sisi = 0.0
         for f in t.foto {
-            guard let g = Visi.render(f, skala: Double(a.deteksi.sisiPanjangPX) / max(f.extent.width, f.extent.height)) else { continue }
+            let asli = max(f.extent.width, f.extent.height)
+            sisi = Rumus.sisiDeteksi(jarakCM: profil.jarakCM, asliPX: asli, a: a)
+            guard let g = Visi.render(f, skala: sisi / asli) else { continue }
             panjangPX = Rumus.panjangPX(stadia, jarakCM: profil.jarakCM, fovDerajat: t.fovDerajat, lebarFotoPX: Double(max(g.width, g.height)))
             let d = Detektor.deteksi(g, model: model, a: a)
             let v = validasiFoto(d, ukuran: CGSize(width: g.width, height: g.height), panjangPX: panjangPX, a: a)
@@ -101,7 +104,7 @@ enum Proses {
         let pilih = n.flatMap { n in perFoto.indices.filter { perFoto[$0].hasil.lolos }.min { abs(jumlah[$0] - n) < abs(jumlah[$1] - n) } }
             ?? perFoto.firstIndex { !$0.hasil.lolos } ?? 0
         let p = perFoto.indices.contains(pilih) ? perFoto[pilih] : nil
-        return HasilSesi(hasil: h, perFotoCek: perFoto.map(\.hasil), jumlah: n, perFoto: jumlah, panjangPX: panjangPX,
+        return HasilSesi(hasil: h, perFotoCek: perFoto.map(\.hasil), jumlah: n, perFoto: jumlah, panjangPX: panjangPX, sisiDeteksiPX: sisi,
                          gambar: p?.gambar, kotak: n != nil ? (p?.deteksi.map(\.kotak) ?? []) : (p?.tanda ?? []))
     }
 }

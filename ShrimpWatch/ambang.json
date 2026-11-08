@@ -1,12 +1,12 @@
 {
-  "versi": "v2-kartu",
+  "versi": "v3-lensa06",
 
   "boxPanjangLuarCM":  { "min": 50,  "max": 56,  "nominal": 52 },
-  "boxLebarLuarCM":    { "min": 36,  "max": 38,  "nominal": 37 },
-  "boxTinggiLuarCM":   { "min": 32,  "max": 36,  "nominal": 34 },
+  "boxLebarLuarCM":    { "min": 36,  "max": 38,  "nominal": 39 },
+  "boxTinggiLuarCM":   { "min": 32,  "max": 36,  "nominal": 47 },
   "tebalDindingCM": 2.0,
 
-  "jarakKameraKeDasarCM": { "min": 55, "max": 68 },
+  "jarakKameraKeDasarCM": { "min": 35, "max": 55 },
   "kedalamanAirCM": 0.5,
   "pembulatanAirML": 50,
 
@@ -30,12 +30,13 @@
     "maksMiringDerajat": 5,
     "frameHalus": 10,
     "maksSebaranCM": 1.5,
-    "koreksiJarakCM": 0.5,
+    "koreksiJarakCM": 0.0,
     "detikTanpaKartu": 10
   },
 
   "kamera": {
     "levelSenter": 0.8,
+    "zoomLensa": 1.2,
     "maksISO": 800,
     "maksDurasiEksposurDetik": 0.0167,
     "sisiAnalisisPX": 480,
@@ -69,5 +70,5 @@
     "maksSelisihAntarFoto": 0.02
   },
 
-  "deteksi": { "sisiPanjangPX": 1920, "sisiUbinPX": 320, "overlapUbin": 0.2 }
+  "deteksi": { "sisiPanjangPX": 1920, "sisiUbinPX": 320, "overlapUbin": 0.2, "jarakLatihCM": 44 }
 }

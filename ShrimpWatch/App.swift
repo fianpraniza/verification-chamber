@@ -86,12 +86,12 @@ struct DaftarView: View {
             switch langkah {
             case .spesifikasi:
                 Form {
-                    Section("Box yang direkomendasikan") {
-                        LabeledContent("Ukuran luar", value: "\(n(a.boxPanjangLuarCM)) × \(n(a.boxLebarLuarCM)) × \(n(a.boxTinggiLuarCM)) cm")
-                        LabeledContent("Bahan", value: "styrofoam putih, tebal ±\(angka(a.tebalDindingCM, 0)) cm")
-                    }
-                    Section("Rig") {
-                        Text("Siapkan 2 box. Box atas dibalik dan dilubangi ±10 × 10 cm di tengah dasarnya, tepat di bawah kamera dan senter HP saat HP ditaruh.")
+                    Section {
+                        LabeledContent("Saran", value: "Tomota \(n(a.boxPanjangLuarCM)) × \(n(a.boxLebarLuarCM)) × \(n(a.boxTinggiLuarCM)) cm")
+                        Text("Box lain juga boleh, asal dari atas box seluruh dasarnya terlihat kamera dan tinggi kamera ke dasar \(angka(a.jarakKameraKeDasarCM.min, 0))–\(angka(a.jarakKameraKeDasarCM.max, 0)) cm.")
+                    } header: { Text("Box") }
+                    Section("Kamera") {
+                        Text("App memakai kamera 0.6x, sama dengan video latih. HP ditaruh atau dipegang di atas box, kamera menghadap dasar.")
                     }
                     Section("Untuk mengukur") {
                         Label("Satu kartu ATM, e-money, atau kartu member (jangan KTP). Kartu warna gelap paling mudah terbaca.", systemImage: "creditcard")
@@ -102,7 +102,7 @@ struct DaftarView: View {
                 Form {
                     Section("Posisi hitung") {
                         Button { mode = .taruh; langkah = .instruksiKartu } label: {
-                            Instruksi(ikon: "square.stack.3d.up", judul: "Taruh", teks: "Tumpuk 2 box, box atas dibalik. HP ditaruh di atas lubang.")
+                            Instruksi(ikon: "square.stack.3d.up", judul: "Taruh", teks: "HP ditaruh di atas box (di tutup berlubang atau penyangga), kamera menghadap dasar.")
                         }
                         Button { mode = .pegang; langkah = .instruksiKartu } label: {
                             Instruksi(ikon: "hand.raised", judul: "Pegang", teks: "HP dipegang di atas box seperti saat menghitung.")
@@ -112,7 +112,7 @@ struct DaftarView: View {
             case .instruksiKartu:
                 LayarIsi(baris: [
                     Instruksi(ikon: "creditcard", judul: "Taruh kartu di tengah dasar box bawah", teks: "Rata, tidak tertekuk, box masih kering dan kosong."),
-                    Instruksi(ikon: "iphone.rear.camera", judul: mode == .taruh ? "Susun rig, taruh HP di atas lubang" : "Pegang HP di posisi hitung",
+                    Instruksi(ikon: "iphone.rear.camera", judul: mode == .taruh ? "Taruh HP di atas box, kamera menghadap dasar" : "Pegang HP di posisi hitung",
                               teks: "Foto diambil otomatis saat kartu terbaca dan HP diam. Seluruh dasar box harus terlihat.")
                 ], tombol: "Mulai") { langkah = .fotoKartu }
             case .fotoKartu:
@@ -129,7 +129,8 @@ struct DaftarView: View {
             case .sudutDasar(let f):
                 LayarSudutDasar(foto: f, onUlang: { langkah = .fotoKartu }) { p, l, sudut in
                     jarak = f.jarakCM; dasar = (p, l)
-                    catatan = Rumus.catatanWadah(jarakCM: f.jarakCM, p: p, l: l, a: a)
+                    let W = Double(f.gambar.width), H = Double(f.gambar.height)
+                    catatan = Rumus.catatanWadah(jarakCM: f.jarakCM, sudutDasar: sudut.map { CGPoint(x: $0.x / W, y: $0.y / H) }, a: a)
                     bukti = ["sudutKartuPX": f.sudutKartu.flatMap { [$0.x, $0.y] }, "sudutDasarPX": sudut.flatMap { [$0.x, $0.y] },
                              "fx": f.fx, "fy": f.fy, "miringDerajat": f.miring, "sebaranCM": f.sebaranCM, "foto": simpanBukti(f, dasarPX: sudut) ?? ""]
                     langkah = .instruksiAcuan
@@ -241,7 +242,7 @@ struct SesiView: View {
                             let s = stadia, p = profil
                             let r = await Task.detached { Proses.hitung(t, profil: p, stadia: s, model: model, a: .sekarang) }.value
                             catat("hitung", r.hasil, tambahan: ["stadia": s.rawValue, "perFoto": r.perFoto, "jumlah": r.jumlah ?? -1,
-                                                                 "panjangPX": r.panjangPX, "perFotoCek": r.perFotoCek.map(\.log)])
+                                                                 "panjangPX": r.panjangPX, "sisiDeteksiPX": r.sisiDeteksiPX, "perFotoCek": r.perFotoCek.map(\.log)])
                             if r.hasil.lolos || uji {
                                 hitungan.append(r.jumlah ?? Int(median(r.perFoto.map(Double.init)).rounded()))
                                 langkah = .hasil(r)

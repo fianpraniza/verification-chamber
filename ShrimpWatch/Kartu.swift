@@ -79,7 +79,7 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
     private func lapor(_ s: String?) { DispatchQueue.main.async { self.status = s } }
 
     private func siapkan() {
-        guard let d = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+        guard let d = Lensa.perangkat(),
               let input = try? AVCaptureDeviceInput(device: d), session.canAddInput(input) else {
             return lapor("Kamera belakang tidak tersedia (Simulator tidak punya kamera).")
         }
@@ -96,6 +96,7 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
             if c.isVideoStabilizationSupported { c.preferredVideoStabilizationMode = .off }   // stabilisasi memotong frame dan menggeser intrinsics
         }
         session.commitConfiguration()
+        Lensa.pasang(d)
         session.startRunning()
         gerak.deviceMotionUpdateInterval = 1 / 30
         gerak.startDeviceMotionUpdates()
@@ -107,7 +108,7 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
         guard nFrame % 6 == 0, let pb = CMSampleBufferGetImageBuffer(sb), let d = device else { return }   // ±5× per detik
         let W = Double(CVPixelBufferGetWidth(pb)), H = Double(CVPixelBufferGetHeight(pb))
 
-        let fxFov = Rumus.fxDariFOV(lebarPX: max(W, H), fovDerajat: Double(d.activeFormat.videoFieldOfView))
+        let fxFov = Rumus.fxDariFOV(lebarPX: max(W, H), fovDerajat: Lensa.fov(d))
         var fx = fxFov, fy = fxFov, cx = W / 2, cy = H / 2
         if let data = CMGetAttachment(sb, key: kCMSampleBufferAttachmentKey_CameraIntrinsicMatrix, attachmentModeOut: nil) as? Data {
             let m = data.withUnsafeBytes { $0.load(as: matrix_float3x3.self) }
@@ -177,7 +178,8 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
         baris.append(("miring", "\(angka(mir))°"))
         baris.append(("sebaran cm", sebar.map { angka($0, 2) } ?? "-"))
         var log: [String: Any] = ["lebarFramePX": W, "tinggiFramePX": H, "fx": fx, "fy": fy, "fxFOV": fxFov, "intrinsik": intrinsik]
-        log["fovDerajat"] = Double(d.activeFormat.videoFieldOfView)
+        log["fovDerajat"] = Lensa.fov(d)
+        log["zoom"] = Double(d.videoZoomFactor)   // kalau fx intrinsics ≈ fxFOV, intrinsics sudah memperhitungkan zoom
         log["miringDerajat"] = mir
         log["rasio"] = k?.rasio ?? 0
         log["rasioKasar"] = kasar?.h.rasio ?? 0
@@ -430,7 +432,7 @@ struct LayarSudutDasar: View {
     }
 
     var body: some View {
-        let catatan = Rumus.catatanWadah(jarakCM: foto.jarakCM, p: dasar.p, l: dasar.l, a: a)
+        let catatan = Rumus.catatanWadah(jarakCM: foto.jarakCM, sudutDasar: titik, a: a)   // pita tepi simetris, koordinat tampilan cukup
         VStack(spacing: 10) {
             Text("Geser 4 titik kuning ke sudut dalam dasar box, tempat dasar bertemu dinding.").font(.callout.bold())
                 .frame(maxWidth: .infinity, alignment: .leading)

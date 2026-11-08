@@ -18,6 +18,29 @@ extension Luma {
     }
 }
 
+/// Lensa yang sama dengan video latih: ultrawide dengan zoom 1,2 ("0.6x" di app Kamera). Dipakai kamera daftar dan hitung,
+/// supaya jarak dan ukuran benur yang diukur saat daftar berlaku juga saat menghitung.
+enum Lensa {
+    /// Virtual dual-wide dulu: punya senter. Zoom < titik pindah (2,0) tetap di ultrawide.
+    static func perangkat() -> AVCaptureDevice? {
+        AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
+            ?? AVCaptureDevice.default(.builtInUltraWideCamera, for: .video, position: .back)
+    }
+
+    /// Panggil setelah sessionPreset diset; mengganti preset mengembalikan zoom ke 1.
+    static func pasang(_ d: AVCaptureDevice) {
+        guard (try? d.lockForConfiguration()) != nil else { return }
+        if d.isVirtualDevice { d.setPrimaryConstituentDeviceSwitchingBehavior(.locked, restrictedSwitchingBehaviorConditions: []) }
+        d.videoZoomFactor = min(CGFloat(AmbangVerifikasi.sekarang.kamera.zoomLensa), d.activeFormat.videoMaxZoomFactor)
+        d.unlockForConfiguration()
+    }
+
+    /// FOV sisi panjang setelah zoom.
+    static func fov(_ d: AVCaptureDevice) -> Double {
+        Rumus.fovEfektif(Double(d.activeFormat.videoFieldOfView), zoom: Double(d.videoZoomFactor))
+    }
+}
+
 /// Foto resolusi penuh (sudah tegak) + FOV sisi panjang sensor (untuk panjang benur dalam piksel).
 struct Tangkapan {
     var foto: [CIImage]
@@ -79,7 +102,7 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
     private func lapor(_ s: String?) { DispatchQueue.main.async { self.status = s } }
 
     private func siapkan() {
-        guard let d = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back), d.hasTorch,
+        guard let d = Lensa.perangkat(), d.hasTorch,
               let input = try? AVCaptureDeviceInput(device: d), session.canAddInput(input) else {
             return lapor("Kamera belakang dengan senter tidak tersedia (Simulator tidak punya kamera).")
         }
@@ -97,6 +120,7 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             if let c = o.connection(with: .video), c.isVideoRotationAngleSupported(90) { c.videoRotationAngle = 90 }
         }
         session.commitConfiguration()
+        Lensa.pasang(d)
         session.startRunning()
         gerak.deviceMotionUpdateInterval = 1 / 30
         gerak.startDeviceMotionUpdates()
@@ -237,7 +261,7 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             if let ci { foto.append(ci) }
             if foto.count < a.hasil.jumlahFoto, percobaan < a.hasil.jumlahFoto * 2 { return ambil() }
             guard !foto.isEmpty else { return lapor("Gagal mengambil foto. Kembali lalu coba lagi.") }
-            let t = Tangkapan(foto: foto, fovDerajat: Double(device?.activeFormat.videoFieldOfView ?? 67))
+            let t = Tangkapan(foto: foto, fovDerajat: device.map(Lensa.fov) ?? 67)
             DispatchQueue.main.async { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); self.onFoto?(t) }
         }
     }
