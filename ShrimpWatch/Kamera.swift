@@ -38,10 +38,26 @@ enum Lensa {
     }
 
     /// Panggil setelah preset/format diset; mengganti format mengembalikan zoom ke 1.
+    /// Fokus/eksposur/white balance dikembalikan ke otomatis: perangkat kamera dipakai bersama, jadi kunci dari kamera acuan
+    /// (fokus .locked di posisi lensa lama) terbawa ke kamera kartu kalau tidak direset.
     static func pasang(_ d: AVCaptureDevice) {
         guard (try? d.lockForConfiguration()) != nil else { return }
         if d.isVirtualDevice { d.setPrimaryConstituentDeviceSwitchingBehavior(.locked, restrictedSwitchingBehaviorConditions: []) }
         d.videoZoomFactor = min(CGFloat(zoom(d)), d.activeFormat.videoMaxZoomFactor)
+        if d.isFocusPointOfInterestSupported { d.focusPointOfInterest = CGPoint(x: 0.5, y: 0.5) }
+        if d.isFocusModeSupported(.continuousAutoFocus) { d.focusMode = .continuousAutoFocus }
+        if d.isExposurePointOfInterestSupported { d.exposurePointOfInterest = CGPoint(x: 0.5, y: 0.5) }
+        if d.isExposureModeSupported(.continuousAutoExposure) { d.exposureMode = .continuousAutoExposure }
+        if d.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) { d.whiteBalanceMode = .continuousAutoWhiteBalance }
+        d.unlockForConfiguration()
+    }
+
+    /// Fokus ke satu titik perangkat (0–1, landscape sensor), tetap otomatis setelahnya. Eksposur tidak ikut dipindah:
+    /// mengukur cahaya di kartu hitam membuat kertas putih di sekitarnya terlalu terang.
+    static func fokus(_ d: AVCaptureDevice, ke p: CGPoint) {
+        guard d.isFocusPointOfInterestSupported, (try? d.lockForConfiguration()) != nil else { return }
+        d.focusPointOfInterest = p
+        if d.isFocusModeSupported(.continuousAutoFocus) { d.focusMode = .continuousAutoFocus }
         d.unlockForConfiguration()
     }
 

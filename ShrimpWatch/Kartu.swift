@@ -38,6 +38,15 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
     private var riwayat: [(tajam: Double, koreksi: Double, kasar: Double)] = []
     private(set) var catatan: [String: Any] = [:]              // nilai frame terakhir untuk log
     private var terakhir: (pb: CVPixelBuffer, sudut: [CGPoint], fx: Double, fy: Double, miring: Double)?
+    private var titikFokus = CGPoint(x: 0.5, y: 0.5)
+
+    /// Ketuk pratinjau: fokus ke titik itu. Setelah kartu terbaca, fokus pindah sendiri ke kartu.
+    func fokus(ke p: CGPoint) {
+        antrian.async { [self] in
+            guard let d = device else { return }
+            titikFokus = p; Lensa.fokus(d, ke: p)
+        }
+    }
 
     /// Bekukan frame terakhir yang kartunya terbaca, beserta jarak median saat ini.
     func potret(_ selesai: @escaping (FotoKartu?) -> Void) {
@@ -157,6 +166,9 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
         if let t = tajam, let c = kasar, Rumus.kartuSah(c.h, a: a) || Rumus.kartuSah(t.h, a: a) {
             k = t.h
             titik = t.px.map { CGPoint(x: $0.x / W, y: $0.y / H) }
+            // Fokus ikut kartu, bukan dinding/bibir box yang lebih dekat ke lensa
+            let pusat = CGPoint(x: titik.map(\.x).reduce(0, +) / 4, y: titik.map(\.y).reduce(0, +) / 4)
+            if hypot(pusat.x - titikFokus.x, pusat.y - titikFokus.y) > 0.05 { titikFokus = pusat; Lensa.fokus(d, ke: pusat) }
             jarakFov = Rumus.jarakKartu(t.px, fx: fxFov, fy: fxFov, a: a)?.jarakCM
             let kor = Rumus.jarakKoreksiTepi(t.px, fx: fx, fy: fy, a: a) ?? t.h.jarakCM
             riwayat = Array((riwayat + [(t.h.jarakCM, kor, c.h.jarakCM)]).suffix(a.kartu.frameHalus))
@@ -207,15 +219,21 @@ struct PratinjauKartu: UIViewRepresentable {
     let session: AVCaptureSession
     let sudut: [CGPoint]
     let warna: UIColor
+    var ketuk: ((CGPoint) -> Void)? = nil      // titik perangkat (0–1, landscape sensor)
 
     final class V: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         let garis = CAShapeLayer()
         var pratinjau: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+        var ketuk: ((CGPoint) -> Void)?
+        @objc func diketuk(_ g: UITapGestureRecognizer) {
+            ketuk?(pratinjau.captureDevicePointConverted(fromLayerPoint: g.location(in: self)))
+        }
     }
 
     func makeUIView(context: Context) -> V {
         let v = V()
+        v.addGestureRecognizer(UITapGestureRecognizer(target: v, action: #selector(V.diketuk)))
         v.pratinjau.session = session
         v.pratinjau.videoGravity = .resizeAspect
         v.garis.fillColor = UIColor.clear.cgColor
@@ -225,6 +243,7 @@ struct PratinjauKartu: UIViewRepresentable {
     }
 
     func updateUIView(_ v: V, context: Context) {
+        v.ketuk = ketuk
         if let c = v.pratinjau.connection, c.isVideoRotationAngleSupported(90) { c.videoRotationAngle = 90 }
         v.garis.frame = v.bounds
         v.garis.strokeColor = warna.cgColor
@@ -251,7 +270,7 @@ struct UjiKartuView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            PratinjauKartu(session: k.session, sudut: k.sudut, warna: datar ? .systemGreen : .systemYellow)
+            PratinjauKartu(session: k.session, sudut: k.sudut, warna: datar ? .systemGreen : .systemYellow, ketuk: k.fokus)
                 .ignoresSafeArea()
                 .onTapGesture { ketik = false }
             VStack(spacing: 10) {
@@ -356,7 +375,7 @@ struct LayarFotoKartu: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            PratinjauKartu(session: k.session, sudut: k.sudut, warna: datar ? .systemGreen : .systemYellow).ignoresSafeArea()
+            PratinjauKartu(session: k.session, sudut: k.sudut, warna: datar ? .systemGreen : .systemYellow, ketuk: k.fokus).ignoresSafeArea()
             VStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(memotret ? "Memotret…" : pesan.0).font(.headline)
