@@ -1,0 +1,73 @@
+{
+  "versi": "v2-kartu",
+
+  "boxPanjangLuarCM":  { "min": 50,  "max": 56,  "nominal": 52 },
+  "boxLebarLuarCM":    { "min": 36,  "max": 38,  "nominal": 37 },
+  "boxTinggiLuarCM":   { "min": 32,  "max": 36,  "nominal": 34 },
+  "tebalDindingCM": 2.0,
+
+  "jarakKameraKeDasarCM": { "min": 55, "max": 68 },
+  "kedalamanAirCM": 0.5,
+  "pembulatanAirML": 50,
+
+  "stadiaDidukung": [10, 11, 12, 13],
+  "maksKapasitas": 4000,
+  "masaBerlakuDaftarHari": 30,
+
+  "arkit": {
+    "frameHalus": 10,
+    "maksGoyangCM": 1.0,
+    "minTinggiTutupCM": 10,
+    "jarakBidikCM": { "min": 30, "max": 150 },
+    "minSudutBidikDerajat": 25,
+    "minCahayaLumen": 400
+  },
+
+  "kartu": {
+    "panjangMM": 85.6,
+    "lebarMM": 53.98,
+    "toleransiRasio": 0.05,
+    "maksMiringDerajat": 5,
+    "frameHalus": 10,
+    "maksSebaranCM": 1.5,
+    "koreksiJarakCM": 0.5,
+    "detikTanpaKartu": 10
+  },
+
+  "kamera": {
+    "levelSenter": 0.8,
+    "maksISO": 800,
+    "maksDurasiEksposurDetik": 0.0167,
+    "sisiAnalisisPX": 480,
+    "frameStabil": 15,
+    "maksKemiringanPegangDerajat": 10,
+    "minKetajaman": 60,
+    "toleransiKecerahan": 0.25
+  },
+
+  "cocokAcuan": {
+    "minNCC": 0.80,
+    "pengaliBaseline": 3.0,
+    "minBatasFeaturePrint": 0.15,
+    "maksDeviasiPetaCahaya": 0.25
+  },
+
+  "hasil": {
+    "jumlahFoto": 5,
+    "minFotoLolos": 3,
+    "pitaTepi": 0.03,
+    "toleransiSkalaBenur": 0.35,
+    "iouNMS": 0.5,
+    "minKeyakinanDeteksi": 0.5,
+    "minRataKeyakinan": 0.75,
+    "batasKeyakinanRendah": 0.6,
+    "maksPersenKeyakinanRendah": 0.10,
+    "faktorJarakTerlaluDekat": 0.5,
+    "maksPersenTerlaluDekat": 0.05,
+    "iouTumpuk": 0.3,
+    "maksPersenTumpuk": 0.02,
+    "maksSelisihAntarFoto": 0.02
+  },
+
+  "deteksi": { "sisiPanjangPX": 1920, "sisiUbinPX": 320, "overlapUbin": 0.2 }
+}
