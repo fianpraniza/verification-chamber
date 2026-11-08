@@ -56,6 +56,7 @@ struct WadahProfile: Codable {
     var airML: Double
     var mode: ModeHitung
     var jarakCM: Double         // kamera ke dasar, dari foto kartu
+    var lensaX: Double          // lensa saat daftar; jarak dan skala hanya berlaku untuk lensa ini
     var catatan: [String]       // alasan belum terverifikasi; kosong = terverifikasi
     var acuan: AcuanFrame
     var nccBaseline: Double     // acuan 1 vs acuan 2 (HP diangkat lalu dikembalikan)
@@ -97,7 +98,7 @@ struct AmbangVerifikasi: Codable {
     }
     struct Kam: Codable {
         var levelSenter: Float
-        var zoomLensa: Double            // 0.6x = ultrawide × 1,2, sama dengan video latih
+        var lensaX: Double               // angka zoom seperti di app Kamera: 0.6 (ultrawide, sama dengan video latih) atau 1 (utama)
         var maksISO: Float
         var maksDurasiEksposurDetik: Double
         var sisiAnalisisPX: Int
@@ -129,8 +130,8 @@ struct AmbangVerifikasi: Codable {
         var maksSelisihAntarFoto: Double
     }
     // Pipeline deteksi: sisi panjang foto 1920 px, ubin 320 px, sama dengan pipeline latih.
-    // jarakLatihCM: kamera ke dasar saat video latih direkam (0.6x, HP di atas box 46 cm)
-    struct Det: Codable { var sisiPanjangPX: Int; var sisiUbinPX: Int; var overlapUbin: Double; var jarakLatihCM: Double }
+    // jarakLatihCM, lensaLatihX: kamera ke dasar dan lensa saat video latih direkam (0.6x, HP di atas box 46 cm)
+    struct Det: Codable { var sisiPanjangPX: Int; var sisiUbinPX: Int; var overlapUbin: Double; var jarakLatihCM: Double; var lensaLatihX: Double }
 
     var versi: String
     var boxPanjangLuarCM: Rentang
@@ -353,10 +354,12 @@ extension Rumus {
         2 * atan(tan(fovDerajat / 2 * .pi / 180) / max(zoom, 1)) * 180 / .pi
     }
 
-    /// Sisi panjang foto untuk deteksi, supaya benur sama besar dengan di video latih: ukuran benur ∝ sisi ÷ jarak.
-    /// Contoh: HP 20% lebih tinggi dari saat latih → foto 20% lebih besar. Tidak melebihi resolusi asli foto.
-    static func sisiDeteksi(jarakCM: Double, asliPX: Double, a: AmbangVerifikasi) -> Double {
-        min(Double(a.deteksi.sisiPanjangPX) * jarakCM / a.deteksi.jarakLatihCM, asliPX)
+    /// Sisi panjang foto untuk deteksi, supaya benur sama besar dengan di video latih (mm per piksel sama).
+    /// Lebar yang terlihat = 2 · jarak · tan(FOV/2), jadi sisi = 1920 · (jarak · tan) ÷ (jarak latih · tan latih).
+    /// Lensa sama → jarak ÷ jarak latih. Lensa 1x di jarak yang sama → foto diperkecil. Tidak melebihi resolusi asli foto.
+    static func sisiDeteksi(jarakCM: Double, fovDerajat: Double, fovLatihDerajat: Double, asliPX: Double, a: AmbangVerifikasi) -> Double {
+        func t(_ f: Double) -> Double { tan(f / 2 * .pi / 180) }
+        return min(Double(a.deteksi.sisiPanjangPX) * jarakCM * t(fovDerajat) / (a.deteksi.jarakLatihCM * t(fovLatihDerajat)), asliPX)
     }
 
     static func kartuSah(_ k: HasilKartu, a: AmbangVerifikasi) -> Bool {
@@ -405,7 +408,7 @@ func petunjukUkur(_ k: KondisiUkur, a: AmbangVerifikasi) -> String? {
 
 /// Wajib daftar ulang jika umur > masa berlaku, model HP berbeda, atau versi config berbeda.
 func perluDaftarUlang(_ p: WadahProfile, a: AmbangVerifikasi, modelHP: String, sekarang: Date = Date()) -> Bool {
-    p.versi != a.versi || p.modelHP != modelHP || sekarang.timeIntervalSince(p.tanggalDaftar) > Double(a.masaBerlakuDaftarHari) * 86_400
+    p.versi != a.versi || p.lensaX != a.kamera.lensaX || p.modelHP != modelHP || sekarang.timeIntervalSince(p.tanggalDaftar) > Double(a.masaBerlakuDaftarHari) * 86_400
 }
 
 // MARK: - Gerbang kamera

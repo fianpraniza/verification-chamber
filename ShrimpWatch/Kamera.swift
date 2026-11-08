@@ -18,20 +18,30 @@ extension Luma {
     }
 }
 
-/// Lensa yang sama dengan video latih: ultrawide dengan zoom 1,2 ("0.6x" di app Kamera). Dipakai kamera daftar dan hitung,
+/// Lensa kamera dari `kamera.lensaX` (angka zoom seperti di app Kamera: 0.6 atau 1). Dipakai kamera daftar dan hitung,
 /// supaya jarak dan ukuran benur yang diukur saat daftar berlaku juga saat menghitung.
 enum Lensa {
-    /// Virtual dual-wide dulu: punya senter. Zoom < titik pindah (2,0) tetap di ultrawide.
-    static func perangkat() -> AVCaptureDevice? {
-        AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
-            ?? AVCaptureDevice.default(.builtInUltraWideCamera, for: .video, position: .back)
+    static var x: Double { AmbangVerifikasi.sekarang.kamera.lensaX }
+
+    /// Di bawah 1x: virtual dual-wide (punya senter; zoom di bawah titik pindah tetap di ultrawide). 1x ke atas: kamera utama.
+    static func perangkat(x: Double = x) -> AVCaptureDevice? {
+        x < 1 ? AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
+                ?? AVCaptureDevice.default(.builtInUltraWideCamera, for: .video, position: .back)
+              : AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
     }
 
-    /// Panggil setelah sessionPreset diset; mengganti preset mengembalikan zoom ke 1.
+    /// Faktor zoom perangkat untuk angka zoom app Kamera. Di perangkat ultrawide/dual-wide, faktor 1 = 0.5x.
+    static func zoom(_ d: AVCaptureDevice, x: Double = x) -> Double {
+        let kali: Double
+        if #available(iOS 18.0, *) { kali = Double(d.displayVideoZoomFactorMultiplier) } else { kali = d.deviceType == .builtInWideAngleCamera ? 1 : 0.5 }
+        return max(1, x / kali)
+    }
+
+    /// Panggil setelah preset/format diset; mengganti format mengembalikan zoom ke 1.
     static func pasang(_ d: AVCaptureDevice) {
         guard (try? d.lockForConfiguration()) != nil else { return }
         if d.isVirtualDevice { d.setPrimaryConstituentDeviceSwitchingBehavior(.locked, restrictedSwitchingBehaviorConditions: []) }
-        d.videoZoomFactor = min(CGFloat(AmbangVerifikasi.sekarang.kamera.zoomLensa), d.activeFormat.videoMaxZoomFactor)
+        d.videoZoomFactor = min(CGFloat(zoom(d)), d.activeFormat.videoMaxZoomFactor)
         d.unlockForConfiguration()
     }
 
@@ -39,12 +49,29 @@ enum Lensa {
     static func fov(_ d: AVCaptureDevice) -> Double {
         Rumus.fovEfektif(Double(d.activeFormat.videoFieldOfView), zoom: Double(d.videoZoomFactor))
     }
+
+    /// FOV lensa video latih di HP ini, untuk menyamakan ukuran benur saat memakai lensa lain.
+    static func fovLatih() -> Double? {
+        let x = AmbangVerifikasi.sekarang.deteksi.lensaLatihX
+        return perangkat(x: x).map { Rumus.fovEfektif(Double($0.activeFormat.videoFieldOfView), zoom: zoom($0, x: x)) }
+    }
+
+    /// Format video 4:3 terbesar (sama bentuknya dengan foto hitung), YUV full range, minimal 24 fps.
+    static func format43(_ d: AVCaptureDevice) -> AVCaptureDevice.Format? {
+        func ukuran(_ f: AVCaptureDevice.Format) -> CMVideoDimensions { CMVideoFormatDescriptionGetDimensions(f.formatDescription) }
+        return d.formats.filter { f in
+            let s = ukuran(f)
+            return s.width * 3 == s.height * 4 && CMFormatDescriptionGetMediaSubType(f.formatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+                && f.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= 24 }
+        }.max { ukuran($0).width < ukuran($1).width }
+    }
 }
 
 /// Foto resolusi penuh (sudah tegak) + FOV sisi panjang sensor (untuk panjang benur dalam piksel).
 struct Tangkapan {
     var foto: [CIImage]
     var fovDerajat: Double
+    var fovLatihDerajat: Double     // lensa video latih, untuk menyamakan ukuran benur
 }
 
 enum ModeKamera {
@@ -261,7 +288,8 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             if let ci { foto.append(ci) }
             if foto.count < a.hasil.jumlahFoto, percobaan < a.hasil.jumlahFoto * 2 { return ambil() }
             guard !foto.isEmpty else { return lapor("Gagal mengambil foto. Kembali lalu coba lagi.") }
-            let t = Tangkapan(foto: foto, fovDerajat: device.map(Lensa.fov) ?? 67)
+            let fov = device.map(Lensa.fov) ?? 67
+            let t = Tangkapan(foto: foto, fovDerajat: fov, fovLatihDerajat: Lensa.fovLatih() ?? fov)
             DispatchQueue.main.async { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); self.onFoto?(t) }
         }
     }

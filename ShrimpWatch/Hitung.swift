@@ -91,7 +91,7 @@ enum Proses {
         var panjangPX = 0.0, sisi = 0.0
         for f in t.foto {
             let asli = max(f.extent.width, f.extent.height)
-            sisi = Rumus.sisiDeteksi(jarakCM: profil.jarakCM, asliPX: asli, a: a)
+            sisi = Rumus.sisiDeteksi(jarakCM: profil.jarakCM, fovDerajat: t.fovDerajat, fovLatihDerajat: t.fovLatihDerajat, asliPX: asli, a: a)
             guard let g = Visi.render(f, skala: sisi / asli) else { continue }
             panjangPX = Rumus.panjangPX(stadia, jarakCM: profil.jarakCM, fovDerajat: t.fovDerajat, lebarFotoPX: Double(max(g.width, g.height)))
             let d = Detektor.deteksi(g, model: model, a: a)

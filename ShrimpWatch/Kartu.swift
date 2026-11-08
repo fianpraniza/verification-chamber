@@ -85,8 +85,10 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
         }
         device = d
         session.beginConfiguration()
-        session.sessionPreset = session.canSetSessionPreset(.hd4K3840x2160) ? .hd4K3840x2160 : .hd1920x1080
         session.addInput(input)
+        // 4:3 seperti foto hitung, supaya dasar yang terlihat saat daftar = yang terlihat saat menghitung
+        if let f = Lensa.format43(d), (try? d.lockForConfiguration()) != nil { d.activeFormat = f; d.unlockForConfiguration() }
+        else { session.sessionPreset = .photo }
         video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
         video.alwaysDiscardsLateVideoFrames = true
         video.setSampleBufferDelegate(self, queue: antrian)
@@ -179,7 +181,7 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
         baris.append(("sebaran cm", sebar.map { angka($0, 2) } ?? "-"))
         var log: [String: Any] = ["lebarFramePX": W, "tinggiFramePX": H, "fx": fx, "fy": fy, "fxFOV": fxFov, "intrinsik": intrinsik]
         log["fovDerajat"] = Lensa.fov(d)
-        log["zoom"] = Double(d.videoZoomFactor)   // kalau fx intrinsics ≈ fxFOV, intrinsics sudah memperhitungkan zoom
+        log["zoom"] = Double(d.videoZoomFactor); log["lensaX"] = Lensa.x   // kalau fx intrinsics ≈ fxFOV, intrinsics sudah memperhitungkan zoom
         log["miringDerajat"] = mir
         log["rasio"] = k?.rasio ?? 0
         log["rasioKasar"] = kasar?.h.rasio ?? 0

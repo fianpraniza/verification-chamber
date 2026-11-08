@@ -59,8 +59,9 @@ assert(Rumus.catatanWadah(jarakCM: 44, sudutDasar: dasarAman + [CGPoint(x: 0.99,
 
 // Lensa 0.6x: FOV 90° dengan zoom 2 → tan 0,5 → 53,13°; skala deteksi mengikuti jarak, dibatasi resolusi asli
 assert(abs(Rumus.fovEfektif(90, zoom: 2) - 53.130102354) < 1e-6 && Rumus.fovEfektif(70, zoom: 1) == 70)
-assert(Rumus.sisiDeteksi(jarakCM: 44, asliPX: 4032, a: a) == 1920)
-assert(abs(Rumus.sisiDeteksi(jarakCM: 55, asliPX: 4032, a: a) - 2400) < 1e-9 && Rumus.sisiDeteksi(jarakCM: 200, asliPX: 4032, a: a) == 4032)
+func sd(_ z: Double, _ f: Double) -> Double { Rumus.sisiDeteksi(jarakCM: z, fovDerajat: f, fovLatihDerajat: 100, asliPX: 4032, a: a) }
+assert(abs(sd(44, 100) - 1920) < 1e-9 && abs(sd(55, 100) - 2400) < 1e-9 && sd(200, 100) == 4032)   // lensa sama: ikut jarak
+assert(abs(sd(44, 70) - 1920 * tan(35 * Double.pi / 180) / tan(50 * Double.pi / 180)) < 1e-9 && sd(44, 70) < 1200)   // 1x: diperkecil
 assert(abs(Rumus.fxDariFOV(lebarPX: 2000, fovDerajat: 90) - 1000) < 1e-9)
 
 // Skala benur: 66 cm, FOV 67°, sisi panjang 1920 px → 0,455 mm/px → PL-10 ±19 px

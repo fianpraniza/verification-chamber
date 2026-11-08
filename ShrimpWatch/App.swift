@@ -91,7 +91,7 @@ struct DaftarView: View {
                         Text("Box lain juga boleh, asal dari atas box seluruh dasarnya terlihat kamera dan tinggi kamera ke dasar \(angka(a.jarakKameraKeDasarCM.min, 0))–\(angka(a.jarakKameraKeDasarCM.max, 0)) cm.")
                     } header: { Text("Box") }
                     Section("Kamera") {
-                        Text("App memakai kamera 0.6x, sama dengan video latih. HP ditaruh atau dipegang di atas box, kamera menghadap dasar.")
+                        Text("App memakai kamera \(angka(Lensa.x))x (video latih: \(angka(a.deteksi.lensaLatihX))x). HP ditaruh atau dipegang di atas box, kamera menghadap dasar.")
                     }
                     Section("Untuk mengukur") {
                         Label("Satu kartu ATM, e-money, atau kartu member (jangan KTP). Kartu warna gelap paling mudah terbaca.", systemImage: "creditcard")
@@ -153,13 +153,13 @@ struct DaftarView: View {
             case .acuan2(let a1):
                 LayarKamera(mode: .acuan(pegang: mode == .pegang, setelan: a1.setelan)) { a2 in
                     let p = WadahProfile(panjangDalam: dasar.p, lebarDalam: dasar.l, luasDasar: dasar.p * dasar.l, airML: airML,
-                                         mode: mode, jarakCM: jarak, catatan: catatan, acuan: a1, nccBaseline: Rumus.ncc(a1.thumb, a2.thumb),
+                                         mode: mode, jarakCM: jarak, lensaX: Lensa.x, catatan: catatan, acuan: a1, nccBaseline: Rumus.ncc(a1.thumb, a2.thumb),
                                          fpBaseline: Visi.jarak(a1.featurePrint, a2.featurePrint) ?? 0,
                                          modelHP: modelHP, versi: a.versi, tanggalDaftar: Date())
                     toko.simpan(p)
                     var t = bukti
                     t.merge(["nccBaseline": p.nccBaseline, "fpBaseline": p.fpBaseline, "jarakCM": p.jarakCM, "airML": p.airML,
-                             "panjangDalam": p.panjangDalam, "lebarDalam": p.lebarDalam, "catatan": p.catatan, "mode": p.mode.rawValue]) { $1 }
+                             "panjangDalam": p.panjangDalam, "lebarDalam": p.lebarDalam, "catatan": p.catatan, "mode": p.mode.rawValue, "lensaX": p.lensaX]) { $1 }
                     catat("daftar", tambahan: t)
                     langkah = .selesai(p)
                 }

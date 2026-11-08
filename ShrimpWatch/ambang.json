@@ -1,5 +1,5 @@
 {
-  "versi": "v3-lensa06",
+  "versi": "v4-lensa",
 
   "boxPanjangLuarCM":  { "min": 50,  "max": 56,  "nominal": 52 },
   "boxLebarLuarCM":    { "min": 36,  "max": 38,  "nominal": 39 },
@@ -36,7 +36,7 @@
 
   "kamera": {
     "levelSenter": 0.8,
-    "zoomLensa": 1.2,
+    "lensaX": 0.6,
     "maksISO": 800,
     "maksDurasiEksposurDetik": 0.0167,
     "sisiAnalisisPX": 480,
@@ -70,5 +70,5 @@
     "maksSelisihAntarFoto": 0.02
   },
 
-  "deteksi": { "sisiPanjangPX": 1920, "sisiUbinPX": 320, "overlapUbin": 0.2, "jarakLatihCM": 44 }
+  "deteksi": { "sisiPanjangPX": 1920, "sisiUbinPX": 320, "overlapUbin": 0.2, "jarakLatihCM": 44, "lensaLatihX": 0.6 }
 }
