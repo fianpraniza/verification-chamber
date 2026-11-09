@@ -74,6 +74,9 @@ let amb = Rumus.ambangCocok(nccBaseline: 0.97, fpBaseline: 0.03, a: a)
 assert(amb.minNCC == 0.80 && amb.maksFP == 0.15)
 let amb2 = Rumus.ambangCocok(nccBaseline: 0.82, fpBaseline: 0.1, a: a)
 assert(abs(amb2.minNCC - 0.77) < 1e-9 && abs(amb2.maksFP - 0.3) < 1e-9)
+// Dasar polos (log 15:38, HP diam, baseline 0,22): cek NCC dilewati, feature print tetap.
+let amb3 = Rumus.ambangCocok(nccBaseline: 0.22, fpBaseline: 0.26, a: a)
+assert(amb3.minNCC < 0 && abs(amb3.maksFP - 0.78) < 1e-9)
 
 // NCC: sama = 1, terbalik = −1
 let t: [UInt8] = (0..<3072).map { UInt8($0 % 251) }
@@ -115,4 +118,28 @@ let potongan = Deteksi(kotak: CGRect(x: 0.11, y: 0.1, width: 0.01, height: 0.02)
 let lain = Deteksi(kotak: CGRect(x: 0.5, y: 0.5, width: 0.02, height: 0.02), keyakinan: 0.7)
 assert(nms([potongan, utuh, lain], batas: a.hasil.iouNMS, ukuran: ios).count == 2)
 
+// HP diam: awal (sensor belum terisi) dianggap bergerak; HP ditaruh lolos; tangan menggeser gagal
+do {
+    var u = UkuranFrame(); u.iso = 100
+    precondition(gerbangAcuan(u, pegang: false, a: a).masalah.contains(.goyang))
+    u.putar = 0.5; u.geser = 0.004
+    precondition(gerbangAcuan(u, pegang: false, a: a).lolos)
+    u.putar = 20
+    precondition(gerbangAcuan(u, pegang: false, a: a).masalah.contains(.goyang))
+}
+// NCC posisi: geser 2 px tetap ≈ 1; gambar beda tetap rendah
+do {
+    let w = 48, h = 64
+    func gambar(_ ox: Int, _ oy: Int) -> [UInt8] {
+        (0..<(w * h)).map { k in
+            let i = k % w - ox, j = k / w - oy
+            return UInt8((i > 10 && i < 30 && j > 15 && j < 45 ? 200 : 60) + (i * 3 + j) % 7)
+        }
+    }
+    let x = gambar(0, 0), y = gambar(2, 1)
+    precondition(Rumus.nccPosisi(x, y) > 0.95, "geser kecil harus tetap cocok")
+    precondition(Rumus.ncc(x, y) < Rumus.nccPosisi(x, y))
+    let z = (0..<(w * h)).map { k in UInt8(k % w < 24 ? 200 : 60) }
+    precondition(Rumus.nccPosisi(x, z) < 0.6, "gambar lain harus rendah: \(Rumus.nccPosisi(x, z))")
+}
 print("semua cek lolos")

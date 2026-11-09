@@ -52,6 +52,17 @@ enum Lensa {
         d.unlockForConfiguration()
     }
 
+    /// Kunci fokus (pemanggil sudah lockForConfiguration). Posisi lensa tertentu hanya bisa di kamera fisik (1x);
+    /// kamera virtual 0.6x melempar exception, jadi di sana fokus otomatis dipindai sekali di tengah lalu terkunci sendiri.
+    static func kunciFokus(_ d: AVCaptureDevice, lensa: Float?) {
+        if let lensa, d.isLockingFocusWithCustomLensPositionSupported {
+            d.setFocusModeLocked(lensPosition: lensa, completionHandler: nil)
+        } else if d.isFocusModeSupported(.autoFocus) {
+            if d.isFocusPointOfInterestSupported { d.focusPointOfInterest = CGPoint(x: 0.5, y: 0.5) }
+            d.focusMode = .autoFocus
+        } else if d.isFocusModeSupported(.locked) { d.focusMode = .locked }
+    }
+
     /// Fokus ke satu titik perangkat (0–1, landscape sensor), tetap otomatis setelahnya. Eksposur tidak ikut dipindah:
     /// mengukur cahaya di kartu hitam membuat kertas putih di sekitarnya terlalu terang.
     static func fokus(_ d: AVCaptureDevice, ke p: CGPoint) {
@@ -91,7 +102,8 @@ struct Tangkapan {
 }
 
 enum ModeKamera {
-    case acuan(pegang: Bool, setelan: SetelanKamera?)   // setelan nil = kunci baru (acuan 1); ada = pakai ulang (acuan 2)
+    case acuan(pegang: Bool, setelan: SetelanKamera?, lensa: Float? = nil)   // setelan nil = kunci baru (acuan 1); ada = pakai ulang (acuan 2)
+                                                                         // lensa = posisi fokus saat kartu terbaca di dasar
     case cocok(WadahProfile)
     case hitung(WadahProfile)
 }
@@ -118,8 +130,9 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
     private let gerak = CMMotionManager()
     private var device: AVCaptureDevice?
     private var siap = false, selesai = false, aktif = true
-    private var nFrame = 0, berturut = 0, gagalSejak: Date?
+    private var nFrame = 0, berturut = 0, gagalSejak: Date?, gagalDicatat = false
     private var gravitasi: [CMAcceleration] = []
+    private var gerakan: [(putar: Double, geser: Double)] = []
     private var setelan: SetelanKamera?
     private var fpAcuan: VNFeaturePrintObservation?, jarakFP: Double?
     private var foto: [CIImage] = [], percobaan = 0
@@ -163,13 +176,13 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             if let c = o.connection(with: .video), c.isVideoRotationAngleSupported(90) { c.videoRotationAngle = 90 }
         }
         session.commitConfiguration()
-        Lensa.pasang(d)
         session.startRunning()
+        Lensa.pasang(d)   // setelah start: preset .photo memasang format saat start dan mengembalikan zoom ke 1 (tampak 0.5x)
         gerak.deviceMotionUpdateInterval = 1 / 30
         gerak.startDeviceMotionUpdates()
         switch mode {
-        case .acuan(_, let s?): pakaiUlang(s)
-        case .acuan(_, nil): kunciBaru()
+        case .acuan(_, let s?, _): pakaiUlang(s)
+        case .acuan(_, nil, let l): kunciBaru(lensa: l)
         case .cocok(let p), .hitung(let p): pakaiUlang(p.acuan.setelan)
         }
     }
@@ -183,23 +196,19 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         atur { d in try? d.setTorchModeOn(level: min(level, AVCaptureDevice.maxAvailableTorchLevel)) }
     }
 
-    /// Senter di level tetap, tunggu ±1 detik, lalu kunci eksposur, white balance, dan fokus.
-    private func kunciBaru() {
+    /// Senter di level tetap, fokus dikunci, tunggu ±1 detik, lalu kunci eksposur dan white balance.
+    private func kunciBaru(lensa: Float?) {
         lapor("Menyalakan senter dan mengunci setelan kamera…")
         atur { d in
             let maks = CMTime(seconds: a.kamera.maksDurasiEksposurDetik, preferredTimescale: 1_000_000)
             d.exposureMode = .continuousAutoExposure
             d.activeMaxExposureDuration = min(maks, d.activeFormat.maxExposureDuration)   // eksposur otomatis tidak lebih lama dari 1/60 s
             d.whiteBalanceMode = .continuousAutoWhiteBalance
-            if d.isFocusModeSupported(.continuousAutoFocus) { d.focusMode = .continuousAutoFocus }
+            Lensa.kunciFokus(d, lensa: lensa)
         }
         senter(a.kamera.levelSenter)
-        antrian.asyncAfter(deadline: .now() + 1.2) { [self] in
-            atur { d in
-                d.exposureMode = .locked
-                d.whiteBalanceMode = .locked
-                if d.isFocusModeSupported(.locked) { d.focusMode = .locked }
-            }
+        setelahFokus(sejak: Date()) { [self] in
+            atur { d in d.exposureMode = .locked; d.whiteBalanceMode = .locked }
             antrian.asyncAfter(deadline: .now() + 0.3) { [self] in
                 guard let d = device else { return }
                 let g = d.deviceWhiteBalanceGains
@@ -210,28 +219,57 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         }
     }
 
+    /// Jalankan `lalu` setelah minimal 1,2 detik dan fokus selesai mencari (paling lama 4 detik).
+    private func setelahFokus(sejak t: Date, _ lalu: @escaping () -> Void) {
+        antrian.asyncAfter(deadline: .now() + 0.1) { [self] in
+            let lama = Date().timeIntervalSince(t)
+            if lama < 1.2 || (device?.isAdjustingFocus ?? false) && lama < 4 { return setelahFokus(sejak: t, lalu) }
+            lalu()
+        }
+    }
+
     /// ISO, durasi eksposur, white balance, posisi fokus, dan level senter dari profil.
     private func pakaiUlang(_ s: SetelanKamera) {
+        var manual = true
         lapor("Memasang setelan kamera dari profil…")
         atur { d in
+            // Kamera virtual (0.6x) tidak mendukung eksposur/white balance manual (exception); di sana tetap otomatis lalu dikunci.
             let f = d.activeFormat
-            d.setExposureModeCustom(duration: CMTime(seconds: min(max(s.durasiEksposurDetik, f.minExposureDuration.seconds), f.maxExposureDuration.seconds),
-                                                     preferredTimescale: 1_000_000),
-                                    iso: min(max(s.iso, f.minISO), f.maxISO), completionHandler: nil)
+            if d.isExposureModeSupported(.custom) {
+                d.setExposureModeCustom(duration: CMTime(seconds: min(max(s.durasiEksposurDetik, f.minExposureDuration.seconds), f.maxExposureDuration.seconds),
+                                                         preferredTimescale: 1_000_000),
+                                        iso: min(max(s.iso, f.minISO), f.maxISO), completionHandler: nil)
+            } else {
+                manual = false
+                d.exposureMode = .continuousAutoExposure
+                d.activeMaxExposureDuration = min(CMTime(seconds: a.kamera.maksDurasiEksposurDetik, preferredTimescale: 1_000_000), f.maxExposureDuration)
+            }
             let m = d.maxWhiteBalanceGain
-            d.setWhiteBalanceModeLocked(with: .init(redGain: min(max(s.gainMerah, 1), m), greenGain: min(max(s.gainHijau, 1), m),
-                                                    blueGain: min(max(s.gainBiru, 1), m)), completionHandler: nil)
-            if d.isFocusModeSupported(.locked) { d.setFocusModeLocked(lensPosition: s.posisiLensa, completionHandler: nil) }
+            if d.isLockingWhiteBalanceWithCustomDeviceGainsSupported {
+                d.setWhiteBalanceModeLocked(with: .init(redGain: min(max(s.gainMerah, 1), m), greenGain: min(max(s.gainHijau, 1), m),
+                                                        blueGain: min(max(s.gainBiru, 1), m)), completionHandler: nil)
+            } else { manual = false }
+            Lensa.kunciFokus(d, lensa: s.posisiLensa)
         }
         senter(s.levelSenter)
         setelan = s
-        antrian.asyncAfter(deadline: .now() + 1.2) { [self] in siap = true; lapor(nil) }
+        setelahFokus(sejak: Date()) { [self] in
+            if !manual { atur { d in
+                if d.isExposureModeSupported(.locked) { d.exposureMode = .locked }
+                if d.isWhiteBalanceModeSupported(.locked) { d.whiteBalanceMode = .locked }
+            } }
+            siap = true; lapor(nil)
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sb: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pb = CMSampleBufferGetImageBuffer(sb) else { return }
         defer { nFrame += 1 }
-        if let g = gerak.deviceMotion?.gravity { gravitasi = (gravitasi + [g]).suffix(15) }   // ±0,5 detik
+        if let m = gerak.deviceMotion {   // ±0,5 detik terakhir
+            gravitasi = (gravitasi + [m.gravity]).suffix(15)
+            let r = m.rotationRate, p = m.userAcceleration
+            gerakan = (gerakan + [((r.x * r.x + r.y * r.y + r.z * r.z).squareRoot() * 180 / .pi, (p.x * p.x + p.y * p.y + p.z * p.z).squareRoot())]).suffix(15)
+        }
         guard aktif, siap, !selesai else { return }
 
         let l = Luma(pixelBuffer: pb, panjang: a.kamera.sisiAnalisisPX)
@@ -241,13 +279,14 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         u.peta = Rumus.normal(l.sel(n: 4))
         u.thumb = Luma(pixelBuffer: pb, panjang: 64).px
         u.iso = Double(setelan?.iso ?? 0)
+        if gerakan.count == 15 { u.putar = gerakan.map(\.putar).max()!; u.geser = gerakan.map(\.geser).max()! }
         let n = Double(max(gravitasi.count, 1))
         let gx = gravitasi.map(\.x).reduce(0, +) / n, gy = gravitasi.map(\.y).reduce(0, +) / n, gz = gravitasi.map(\.z).reduce(0, +) / n
         u.kemiringan = acos(min(1, abs(gz) / max((gx * gx + gy * gy + gz * gz).squareRoot(), 1e-9))) * 180 / .pi
 
         let h: HasilVerifikasi
         switch mode {
-        case .acuan(let pegang, _): h = gerbangAcuan(u, pegang: pegang, a: a)
+        case .acuan(let pegang, _, _): h = gerbangAcuan(u, pegang: pegang, a: a)
         case .cocok(let p):
             if nFrame % 15 == 0, let acuan = fpAcuan, let f = Visi.sidik(pb) {   // ±2× per detik
                 var d: Float = 0
@@ -262,6 +301,7 @@ final class Kamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         // Satu cek gagal mengembalikan penghitung ke nol. Mode uji: gagal hanya peringatan, penghitung tetap jalan.
         berturut = h.lolos || uji ? berturut + 1 : 0
         let p = Double(berturut) / Double(a.kamera.frameStabil), lama = gagalSejak.map { Date().timeIntervalSince($0) > 5 } ?? false
+        if case .cocok = mode, lama, !gagalDicatat { gagalDicatat = true; catat("cekWadahGagal", h) }   // nilai yang gagal ikut tercatat
         DispatchQueue.main.async { self.hasil = h; self.progres = p; self.gagalLama = lama }
         guard berturut >= a.kamera.frameStabil else { return }
 

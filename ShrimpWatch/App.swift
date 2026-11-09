@@ -77,6 +77,7 @@ struct DaftarView: View {
     @State private var dasar = (p: 0.0, l: 0.0)
     @State private var catatan: [String] = []
     @State private var bukti: [String: Any] = [:]   // nilai foto kartu untuk log daftar
+    @State private var lensa: Float?                 // posisi fokus saat kartu terbaca
     private let a = AmbangVerifikasi.sekarang
 
     private var airML: Double { Rumus.airML(p: dasar.p, l: dasar.l, a: a) }
@@ -122,17 +123,17 @@ struct DaftarView: View {
                     } else {   // dilewati di mode uji: ukuran nominal
                         let d = Rumus.dalam(UkuranBox(panjang: a.boxPanjangLuarCM.nominal ?? 52, lebar: a.boxLebarLuarCM.nominal ?? 37, tinggi: 0), a: a)
                         jarak = (a.jarakKameraKeDasarCM.min + a.jarakKameraKeDasarCM.max) / 2
-                        dasar = d; catatan = ["Ukuran dilewati (mode uji)"]; bukti = [:]
+                        dasar = d; catatan = ["Ukuran dilewati (mode uji)"]; bukti = [:]; lensa = nil
                         langkah = .instruksiAcuan
                     }
                 }
             case .sudutDasar(let f):
                 LayarSudutDasar(foto: f, onUlang: { langkah = .fotoKartu }) { p, l, sudut in
-                    jarak = f.jarakCM; dasar = (p, l)
+                    jarak = f.jarakCM; dasar = (p, l); lensa = f.posisiLensa
                     let W = Double(f.gambar.width), H = Double(f.gambar.height)
                     catatan = Rumus.catatanWadah(jarakCM: f.jarakCM, sudutDasar: sudut.map { CGPoint(x: $0.x / W, y: $0.y / H) }, a: a)
                     bukti = ["sudutKartuPX": f.sudutKartu.flatMap { [$0.x, $0.y] }, "sudutDasarPX": sudut.flatMap { [$0.x, $0.y] },
-                             "fx": f.fx, "fy": f.fy, "miringDerajat": f.miring, "sebaranCM": f.sebaranCM, "foto": simpanBukti(f, dasarPX: sudut) ?? ""]
+                             "fx": f.fx, "fy": f.fy, "miringDerajat": f.miring, "sebaranCM": f.sebaranCM, "posisiLensaKartu": f.posisiLensa, "foto": simpanBukti(f, dasarPX: sudut) ?? ""]
                     langkah = .instruksiAcuan
                 }
             case .instruksiAcuan:
@@ -144,7 +145,7 @@ struct DaftarView: View {
                               teks: "Foto acuan diambil otomatis saat gambar stabil.")
                 ], tombol: "Ambil foto acuan") { langkah = .acuan1 }
             case .acuan1:
-                LayarKamera(mode: .acuan(pegang: mode == .pegang, setelan: nil)) { acuan in langkah = .jeda(acuan) }
+                LayarKamera(mode: .acuan(pegang: mode == .pegang, setelan: nil, lensa: lensa)) { acuan in langkah = .jeda(acuan) }
             case .jeda(let a1):
                 LayarIsi(baris: [
                     Instruksi(ikon: "checkmark.circle.fill", judul: "Acuan 1 tersimpan", teks: "Sekarang ukur variasi posisi."),
@@ -153,13 +154,13 @@ struct DaftarView: View {
             case .acuan2(let a1):
                 LayarKamera(mode: .acuan(pegang: mode == .pegang, setelan: a1.setelan)) { a2 in
                     let p = WadahProfile(panjangDalam: dasar.p, lebarDalam: dasar.l, luasDasar: dasar.p * dasar.l, airML: airML,
-                                         mode: mode, jarakCM: jarak, lensaX: Lensa.x, catatan: catatan, acuan: a1, nccBaseline: Rumus.ncc(a1.thumb, a2.thumb),
+                                         mode: mode, jarakCM: jarak, lensaX: Lensa.x, catatan: catatan, acuan: a1, nccBaseline: Rumus.nccPosisi(a1.thumb, a2.thumb),
                                          fpBaseline: Visi.jarak(a1.featurePrint, a2.featurePrint) ?? 0,
                                          modelHP: modelHP, versi: a.versi, tanggalDaftar: Date())
                     toko.simpan(p)
                     var t = bukti
                     t.merge(["nccBaseline": p.nccBaseline, "fpBaseline": p.fpBaseline, "jarakCM": p.jarakCM, "airML": p.airML,
-                             "panjangDalam": p.panjangDalam, "lebarDalam": p.lebarDalam, "catatan": p.catatan, "mode": p.mode.rawValue, "lensaX": p.lensaX]) { $1 }
+                             "panjangDalam": p.panjangDalam, "lebarDalam": p.lebarDalam, "catatan": p.catatan, "mode": p.mode.rawValue, "lensaX": p.lensaX, "posisiLensaAcuan": a1.setelan.posisiLensa]) { $1 }
                     catat("daftar", tambahan: t)
                     langkah = .selesai(p)
                 }

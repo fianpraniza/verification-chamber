@@ -1,5 +1,5 @@
 {
-  "versi": "v4-lensa",
+  "versi": "v5-lensa1x",
 
   "boxPanjangLuarCM":  { "min": 50,  "max": 56,  "nominal": 52 },
   "boxLebarLuarCM":    { "min": 36,  "max": 38,  "nominal": 39 },
@@ -30,24 +30,27 @@
     "maksMiringDerajat": 5,
     "frameHalus": 10,
     "maksSebaranCM": 1.5,
-    "koreksiJarakCM": 0.0,
+    "koreksiJarakCM": 0.5,
     "detikTanpaKartu": 10
   },
 
   "kamera": {
     "levelSenter": 0.8,
-    "lensaX": 0.6,
+    "lensaX": 1,
     "maksISO": 800,
     "maksDurasiEksposurDetik": 0.0167,
     "sisiAnalisisPX": 480,
     "frameStabil": 15,
     "maksKemiringanPegangDerajat": 10,
     "minKetajaman": 60,
-    "toleransiKecerahan": 0.25
+    "toleransiKecerahan": 0.25,
+    "maksPutarDerajatPerDetik": 5,
+    "maksGeserG": 0.03
   },
 
   "cocokAcuan": {
     "minNCC": 0.80,
+    "minBaselineNCC": 0.6,
     "pengaliBaseline": 3.0,
     "minBatasFeaturePrint": 0.15,
     "maksDeviasiPetaCahaya": 0.25

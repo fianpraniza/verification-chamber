@@ -12,6 +12,7 @@ struct FotoKartu {
     var jarakCM: Double          // median koreksi tepi + koreksi kalibrasi
     var miring: Double
     var sebaranCM: Double
+    var posisiLensa: Float       // fokus saat kartu (di dasar) terbaca, dipakai mengunci fokus foto acuan
 }
 
 /// Jarak kamera ke dasar box dari kartu ATM yang rata di dasar (daftar wadah dan layar uji).
@@ -37,7 +38,7 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
     private var nFrame = 0, intrinsik = false
     private var riwayat: [(tajam: Double, koreksi: Double, kasar: Double)] = []
     private(set) var catatan: [String: Any] = [:]              // nilai frame terakhir untuk log
-    private var terakhir: (pb: CVPixelBuffer, sudut: [CGPoint], fx: Double, fy: Double, miring: Double)?
+    private var terakhir: (pb: CVPixelBuffer, sudut: [CGPoint], fx: Double, fy: Double, miring: Double, lensa: Float)?
     private var titikFokus = CGPoint(x: 0.5, y: 0.5)
 
     /// Ketuk pratinjau: fokus ke titik itu. Setelah kartu terbaca, fokus pindah sendiri ke kartu.
@@ -56,7 +57,7 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
                   let cg = CIContext().createCGImage(CIImage(cvPixelBuffer: t.pb), from: CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(t.pb), height: CVPixelBufferGetHeight(t.pb)))
             else { return DispatchQueue.main.async { selesai(nil) } }
             let f = FotoKartu(gambar: cg, sudutKartu: t.sudut, fx: t.fx, fy: t.fy, jarakCM: median(kor) + a.kartu.koreksiJarakCM,
-                              miring: t.miring, sebaranCM: taj.max()! - taj.min()!)
+                              miring: t.miring, sebaranCM: taj.max()! - taj.min()!, posisiLensa: t.lensa)
             DispatchQueue.main.async { selesai(f) }
         }
     }
@@ -172,7 +173,7 @@ final class KameraKartu: NSObject, ObservableObject, AVCaptureVideoDataOutputSam
             jarakFov = Rumus.jarakKartu(t.px, fx: fxFov, fy: fxFov, a: a)?.jarakCM
             let kor = Rumus.jarakKoreksiTepi(t.px, fx: fx, fy: fy, a: a) ?? t.h.jarakCM
             riwayat = Array((riwayat + [(t.h.jarakCM, kor, c.h.jarakCM)]).suffix(a.kartu.frameHalus))
-            terakhir = (pb, t.px, fx, fy, mir)
+            terakhir = (pb, t.px, fx, fy, mir, d.lensPosition)
         } else {
             riwayat = []
             terakhir = nil

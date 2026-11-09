@@ -106,9 +106,12 @@ struct AmbangVerifikasi: Codable {
         var maksKemiringanPegangDerajat: Double
         var minKetajaman: Double
         var toleransiKecerahan: Double
+        var maksPutarDerajatPerDetik: Double   // HP dianggap diam: putaran dan geseran maksimum selama ±0,5 detik terakhir
+        var maksGeserG: Double
     }
     struct Cocok: Codable {
         var minNCC: Double
+        var minBaselineNCC: Double  // di bawah ini, NCC acuan 1 vs 2 sendiri sudah acak: cek NCC dilewati
         var pengaliBaseline: Double
         var minBatasFeaturePrint: Double
         var maksDeviasiPetaCahaya: Double
@@ -161,7 +164,7 @@ struct AmbangVerifikasi: Codable {
 enum MasalahVerifikasi: String, Codable, CaseIterable {
     case profilKedaluwarsa
     // Foto acuan dan cek ringan sebelum hitung
-    case cahayaLemah, hpMiring, blur
+    case cahayaLemah, hpMiring, goyang, blur
     // Cek wadah terhadap acuan
     case wadahBerbeda, posisiBeda, cahayaBeda
     // Hasil
@@ -174,6 +177,7 @@ enum MasalahVerifikasi: String, Codable, CaseIterable {
         case .profilKedaluwarsa: ("Wadah perlu didaftarkan ulang", "Profil lebih dari 30 hari, HP berganti, atau config diperbarui", "exclamationmark.arrow.circlepath")
         case .cahayaLemah: ("Cahaya terlalu lemah", "Periksa senter", "flashlight.off.fill")
         case .hpMiring: ("HP miring", "Sejajarkan HP dengan dasar wadah", "level")
+        case .goyang: ("HP masih bergerak", "Taruh HP di posisi hitung, lalu diamkan", "hand.raised.slash")
         case .blur: ("Gambar belum tajam", "Tahan HP diam, tunggu fokus", "camera.metering.unknown")
         case .wadahBerbeda: ("Wadah berbeda dari yang didaftarkan", "Pakai box yang didaftarkan, atau daftar ulang", "questionmark.square.dashed")
         case .posisiBeda: ("Tinggi atau posisi HP berbeda dari saat daftar", "Kembalikan HP ke posisi hitung", "arrow.up.and.down")
@@ -247,8 +251,44 @@ enum Rumus {
     }
 
     /// Ambang cocok dari baseline (variasi saat HP diangkat lalu dikembalikan).
+    /// Baseline NCC rendah = frame hanya berisi dasar polos (tidak ada tepi/dinding), jadi NCC cuma mengukur noise dan
+    /// pantulan air: minNCC = −1 (dilewati). Tinggi HP tetap dijaga cek ukuran benur saat hitung.
     static func ambangCocok(nccBaseline: Double, fpBaseline: Double, a: AmbangVerifikasi) -> (minNCC: Double, maksFP: Double) {
-        (min(a.cocokAcuan.minNCC, nccBaseline - 0.05), max(a.cocokAcuan.pengaliBaseline * fpBaseline, a.cocokAcuan.minBatasFeaturePrint))
+        (nccBaseline < a.cocokAcuan.minBaselineNCC ? -1 : min(a.cocokAcuan.minNCC, nccBaseline - 0.05),
+         max(a.cocokAcuan.pengaliBaseline * fpBaseline, a.cocokAcuan.minBatasFeaturePrint))
+    }
+
+    /// NCC untuk cek posisi: kedua thumbnail diburamkan 3 × 3 lalu dicari geseran terbaik ±`geser` piksel.
+    /// Thumbnail diambil per piksel (tanpa rata-rata), jadi bintik pantulan senter di air dan noise sensor ikut; tanpa blur dan
+    /// geseran, HP yang ditaruh ulang beberapa milimeter saja turun ke NCC 0,5–0,7. ±3 px dari 48 ≈ ±2–3 cm di dasar.
+    /// Perubahan tinggi (skala) dan box lain tetap menurunkan nilainya.
+    static func nccPosisi(_ x: [UInt8], _ y: [UInt8], lebar w: Int = 48, geser g: Int = 3) -> Double {
+        guard x.count == y.count, w > 2 * g + 2, x.count % w == 0, x.count / w > 2 * g + 2 else { return ncc(x, y) }
+        let h = x.count / w
+        func blur(_ p: [UInt8]) -> [Double] {
+            var o = [Double](repeating: 0, count: p.count)
+            for j in 0..<h { for i in 0..<w {
+                var s = 0.0, n = 0.0
+                for dj in -1...1 { for di in -1...1 {
+                    let ii = i + di, jj = j + dj
+                    if ii >= 0, ii < w, jj >= 0, jj < h { s += Double(p[jj * w + ii]); n += 1 }
+                }}
+                o[j * w + i] = s / n
+            }}
+            return o
+        }
+        let a = blur(x), b = blur(y)
+        var terbaik = -1.0
+        for dy in -g...g { for dx in -g...g {
+            var pa: [Double] = [], pb: [Double] = []
+            pa.reserveCapacity((w - 2 * g) * (h - 2 * g)); pb.reserveCapacity(pa.capacity)
+            for j in g..<(h - g) { for i in g..<(w - g) { pa.append(a[j * w + i]); pb.append(b[(j + dy) * w + i + dx]) } }
+            let ma = mean(pa), mb = mean(pb)
+            var sab = 0.0, saa = 0.0, sbb = 0.0
+            for k in pa.indices { let p = pa[k] - ma, q = pb[k] - mb; sab += p * q; saa += p * p; sbb += q * q }
+            terbaik = max(terbaik, sab / max((saa * sbb).squareRoot(), 1e-9))
+        }}
+        return terbaik
     }
 
     /// Normalized cross-correlation dua thumbnail sama ukuran (−1…1).
@@ -421,14 +461,25 @@ struct UkuranFrame {
     var thumb: [UInt8] = []
     var iso = 0.0
     var jarakFP: Double?        // ke acuan, diperbarui ±2× per detik
+    var putar = 90.0            // °/detik, maksimum ±0,5 detik terakhir (giroskop); awal = bergerak
+    var geser = 1.0             // g, percepatan tangan maksimum ±0,5 detik terakhir
 }
 
-/// Foto acuan: senter cukup, gambar tajam, HP sejajar (mode pegang).
+/// HP diam: tidak berputar dan tidak digeser. Skor gambar (ketajaman, beda frame) tidak dipakai karena dasar box polos.
+func cekDiam(_ h: inout HasilVerifikasi, _ u: UkuranFrame, a: AmbangVerifikasi) {
+    let k = a.kamera
+    h.cek("putar °/s", u.putar, "≤ \(angka(k.maksPutarDerajatPerDetik, 0))", lolos: u.putar <= k.maksPutarDerajatPerDetik, .goyang)
+    h.cek("geser g", u.geser, "≤ \(angka(k.maksGeserG, 2))", lolos: u.geser <= k.maksGeserG, .goyang)
+}
+
+/// Foto acuan: senter cukup, HP sejajar (mode pegang).
+/// Tanpa cek ketajaman: skor ketajaman mengukur tekstur, bukan fokus. Box kosong/berisi air polos selalu rendah (±30) walau fokus benar;
+/// fokusnya sendiri sudah dikunci di posisi saat kartu di dasar terbaca.
 func gerbangAcuan(_ u: UkuranFrame, pegang: Bool, a: AmbangVerifikasi) -> HasilVerifikasi {
     let k = a.kamera
     var h = HasilVerifikasi()
     h.cek("ISO", u.iso, "≤ \(angka(Double(k.maksISO), 0))", lolos: u.iso <= Double(k.maksISO), .cahayaLemah)
-    h.cek("ketajaman", u.ketajaman, "≥ \(angka(k.minKetajaman, 0))", lolos: u.ketajaman >= k.minKetajaman, .blur)
+    cekDiam(&h, u, a: a)
     if pegang { h.cek("kemiringan °", u.kemiringan, "≤ \(angka(k.maksKemiringanPegangDerajat, 0))", lolos: u.kemiringan <= k.maksKemiringanPegangDerajat, .hpMiring) }
     return h
 }
@@ -437,8 +488,8 @@ func gerbangAcuan(_ u: UkuranFrame, pegang: Bool, a: AmbangVerifikasi) -> HasilV
 func gerbangCocok(_ u: UkuranFrame, profil p: WadahProfile, a: AmbangVerifikasi) -> HasilVerifikasi {
     let amb = Rumus.ambangCocok(nccBaseline: p.nccBaseline, fpBaseline: p.fpBaseline, a: a)
     var h = HasilVerifikasi()
-    let n = Rumus.ncc(u.thumb, p.acuan.thumb)
-    h.cek("NCC", n, "≥ \(angka(amb.minNCC, 2))", lolos: n >= amb.minNCC, .posisiBeda)
+    let n = Rumus.nccPosisi(u.thumb, p.acuan.thumb)
+    h.cek("NCC", n, amb.minNCC < 0 ? "dilewati (dasar polos)" : "≥ \(angka(amb.minNCC, 2))", lolos: n >= amb.minNCC, .posisiBeda)
     if let f = u.jarakFP { h.cek("feature print", f, "≤ \(angka(amb.maksFP, 2))", lolos: f <= amb.maksFP, .wadahBerbeda) }
     let dev = Rumus.deviasiPeta(u.peta, p.acuan.peta)
     h.cek("deviasi cahaya", dev, "≤ \(angka(a.cocokAcuan.maksDeviasiPetaCahaya, 2))", lolos: dev <= a.cocokAcuan.maksDeviasiPetaCahaya, .cahayaBeda)
@@ -447,12 +498,17 @@ func gerbangCocok(_ u: UkuranFrame, profil p: WadahProfile, a: AmbangVerifikasi)
     return h
 }
 
-/// Cek ringan sebelum foto hitung: tajam, sejajar (mode pegang), kecerahan dalam toleransi acuan.
+/// Cek ringan sebelum foto hitung: sejajar dan tidak goyang (mode pegang), kecerahan dalam toleransi acuan.
+/// Ketajaman hanya di mode pegang (goyang tangan). Mode taruh: HP diam dan fokus terkunci, sedangkan skornya bergantung pada
+/// banyaknya benur, jadi benur sedikit bisa tertahan tanpa alasan.
 func gerbangHitung(_ u: UkuranFrame, profil p: WadahProfile, a: AmbangVerifikasi) -> HasilVerifikasi {
     let kam = a.kamera
     var h = HasilVerifikasi()
-    h.cek("ketajaman", u.ketajaman, "≥ \(angka(kam.minKetajaman, 0))", lolos: u.ketajaman >= kam.minKetajaman, .blur)
-    if p.mode == .pegang { h.cek("kemiringan °", u.kemiringan, "≤ \(angka(kam.maksKemiringanPegangDerajat, 0))", lolos: u.kemiringan <= kam.maksKemiringanPegangDerajat, .hpMiring) }
+    cekDiam(&h, u, a: a)
+    if p.mode == .pegang {
+        h.cek("ketajaman", u.ketajaman, "≥ \(angka(kam.minKetajaman, 0))", lolos: u.ketajaman >= kam.minKetajaman, .blur)
+        h.cek("kemiringan °", u.kemiringan, "≤ \(angka(kam.maksKemiringanPegangDerajat, 0))", lolos: u.kemiringan <= kam.maksKemiringanPegangDerajat, .hpMiring)
+    }
     let k = u.kecerahan / max(p.acuan.kecerahan, 1) - 1
     h.cek("selisih kecerahan", k, "±\(angka(kam.toleransiKecerahan, 2))", lolos: abs(k) <= kam.toleransiKecerahan, .cahayaBeda)
     return h
